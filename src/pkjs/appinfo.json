@@ -1,0 +1,49 @@
+{
+  "uuid": "5f2d8d95-1f93-4f71-9c38-afllivescores01",
+  "shortName": "AFL Live Scores",
+  "longName": "AFL Live Scores",
+  "companyName": "Chris Hardwick",
+  "versionLabel": "1.0",
+  "sdkVersion": "3",
+  "targetPlatforms": [
+    "aplite",
+    "basalt",
+    "chalk",
+    "diorite"
+  ],
+  "watchapp": {
+    "watchface": false
+  },
+  "capabilities": [
+    "configurable"
+  ],
+  "appKeys": {
+    "REQUEST_REFRESH": 0,
+    "MODE": 1,
+    "COUNT": 2,
+    "STATUS": 3,
+    "TITLE_0": 10,
+    "SUBTITLE_0": 11,
+    "TITLE_1": 12,
+    "SUBTITLE_1": 13,
+    "TITLE_2": 14,
+    "SUBTITLE_2": 15,
+    "TITLE_3": 16,
+    "SUBTITLE_3": 17,
+    "TITLE_4": 18,
+    "SUBTITLE_4": 19,
+    "TITLE_5": 20,
+    "SUBTITLE_5": 21,
+    "TITLE_6": 22,
+    "SUBTITLE_6": 23,
+    "TITLE_7": 24,
+    "SUBTITLE_7": 25,
+    "TITLE_8": 26,
+    "SUBTITLE_8": 27,
+    "TITLE_9": 28,
+    "SUBTITLE_9": 29
+  },
+  "resources": {
+    "media": []
+  }
+}

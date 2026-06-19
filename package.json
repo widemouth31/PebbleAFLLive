@@ -1,0 +1,33 @@
+{
+    "author": "chrishardwick4@gmail.com",
+    "dependencies": {},
+    "keywords": [],
+    "name": "afl-live",
+    "pebble": {
+        "capabilities": [
+            "configurable"
+        ],
+        "displayName": "AFL Live",
+        "enableMultiJS": true,
+        "messageKeys": [],
+        "projectType": "native",
+        "resources": {
+            "media": []
+        },
+        "sdkVersion": "3",
+        "targetPlatforms": [
+            "aplite",
+            "basalt",
+            "chalk",
+            "diorite",
+            "emery",
+            "gabbro",
+            "flint"
+        ],
+        "uuid": "6867bf21-e0c6-4730-9a02-bfda20909200",
+        "watchapp": {
+            "watchface": false
+        }
+    },
+    "version": "1.0.0"
+}

@@ -1,0 +1,830 @@
+var MAX_GAMES = 10;
+
+var KEY_COUNT = 2;
+var KEY_STATUS = 3;
+
+var KEY_TITLE_0 = 10;
+var KEY_SUBTITLE_0 = 11;
+
+var SHOW_CURRENT_ROUND = false;
+var REFRESH_MINUTES = 2;
+
+var ROUND_CACHE_HOURS = 6;
+var CACHED_ROUND = null;
+var CACHED_ROUND_YEAR = null;
+var CACHED_ROUND_TIME = 0;
+
+var refreshTimer = null;
+
+var TEAM_ABBR = {
+  "Adelaide": "ADE",
+  "Adelaide Crows": "ADE",
+  "Brisbane": "BRI",
+  "Brisbane Lions": "BRI",
+  "Carlton": "CAR",
+  "Carlton Blues": "CAR",
+  "Collingwood": "COL",
+  "Collingwood Magpies": "COL",
+  "Essendon": "ESS",
+  "Essendon Bombers": "ESS",
+  "Fremantle": "FRE",
+  "Fremantle Dockers": "FRE",
+  "Geelong": "GEE",
+  "Geelong Cats": "GEE",
+  "Gold Coast": "GCS",
+  "Gold Coast Suns": "GCS",
+  "Greater Western Sydney": "GWS",
+  "GWS": "GWS",
+  "GWS Giants": "GWS",
+  "Hawthorn": "HAW",
+  "Hawthorn Hawks": "HAW",
+  "Melbourne": "MEL",
+  "Melbourne Demons": "MEL",
+  "North Melbourne": "NM",
+  "North Melbourne Kangaroos": "NM",
+  "Port Adelaide": "PA",
+  "Port Adelaide Power": "PA",
+  "Richmond": "RIC",
+  "Richmond Tigers": "RIC",
+  "St Kilda": "STK",
+  "St Kilda Saints": "STK",
+  "Sydney": "SYD",
+  "Sydney Swans": "SYD",
+  "West Coast": "WCE",
+  "West Coast Eagles": "WCE",
+  "Western Bulldogs": "WB"
+};
+
+function log(message) {
+  console.log("AFL Live: " + message);
+}
+
+function getCurrentYear() {
+  return new Date().getFullYear();
+}
+
+function loadSettings() {
+  var raw;
+  var parsed;
+  var mins;
+
+  try {
+    raw = localStorage.getItem("afl-live-settings");
+
+    if (!raw) {
+      log("No saved settings found");
+      loadRoundCache();
+      return;
+    }
+
+    parsed = JSON.parse(raw);
+
+    SHOW_CURRENT_ROUND = parsed.showCurrentRound === true;
+
+    mins = parseInt(parsed.refreshMinutes, 10);
+
+    if (!isNaN(mins) && mins > 0) {
+      REFRESH_MINUTES = mins;
+    } else {
+      REFRESH_MINUTES = 2;
+    }
+
+    loadRoundCache();
+
+    log("Settings loaded. SHOW_CURRENT_ROUND=" + SHOW_CURRENT_ROUND + ", REFRESH_MINUTES=" + REFRESH_MINUTES);
+  } catch (e) {
+    log("Failed to load settings: " + e.message);
+    loadRoundCache();
+  }
+}
+
+function saveSettings(config) {
+  var mins;
+
+  try {
+    SHOW_CURRENT_ROUND = config.showCurrentRound === true;
+
+    mins = parseInt(config.refreshMinutes, 10);
+
+    if (!isNaN(mins) && mins > 0) {
+      REFRESH_MINUTES = mins;
+    } else {
+      REFRESH_MINUTES = 2;
+    }
+
+    localStorage.setItem("afl-live-settings", JSON.stringify({
+      showCurrentRound: SHOW_CURRENT_ROUND,
+      refreshMinutes: REFRESH_MINUTES
+    }));
+
+    log("Settings saved. SHOW_CURRENT_ROUND=" + SHOW_CURRENT_ROUND + ", REFRESH_MINUTES=" + REFRESH_MINUTES);
+  } catch (e) {
+    log("Failed to save settings: " + e.message);
+  }
+}
+
+function loadRoundCache() {
+  var raw;
+  var parsed;
+
+  try {
+    raw = localStorage.getItem("afl-live-round-cache");
+
+    if (!raw) {
+      return;
+    }
+
+    parsed = JSON.parse(raw);
+
+    CACHED_ROUND = parsed.round;
+    CACHED_ROUND_YEAR = parsed.year;
+    CACHED_ROUND_TIME = parsed.time;
+
+    log("Round cache loaded. round=" + CACHED_ROUND + ", year=" + CACHED_ROUND_YEAR);
+  } catch (e) {
+    log("Failed to load round cache: " + e.message);
+  }
+}
+
+function saveRoundCache(round, year) {
+  try {
+    CACHED_ROUND = round;
+    CACHED_ROUND_YEAR = year;
+    CACHED_ROUND_TIME = new Date().getTime();
+
+    localStorage.setItem("afl-live-round-cache", JSON.stringify({
+      round: CACHED_ROUND,
+      year: CACHED_ROUND_YEAR,
+      time: CACHED_ROUND_TIME
+    }));
+
+    log("Round cache saved. round=" + CACHED_ROUND + ", year=" + CACHED_ROUND_YEAR);
+  } catch (e) {
+    log("Failed to save round cache: " + e.message);
+  }
+}
+
+function isRoundCacheValid() {
+  var now;
+  var ageMs;
+  var maxAgeMs;
+  var year;
+
+  year = getCurrentYear();
+
+  if (CACHED_ROUND === null || CACHED_ROUND === undefined || CACHED_ROUND === "") {
+    return false;
+  }
+
+  if (CACHED_ROUND_YEAR !== year) {
+    return false;
+  }
+
+  now = new Date().getTime();
+  ageMs = now - CACHED_ROUND_TIME;
+  maxAgeMs = ROUND_CACHE_HOURS * 60 * 60 * 1000;
+
+  if (ageMs > maxAgeMs) {
+    return false;
+  }
+
+  return true;
+}
+
+function clearRoundCache() {
+  CACHED_ROUND = null;
+  CACHED_ROUND_YEAR = null;
+  CACHED_ROUND_TIME = 0;
+
+  try {
+    localStorage.removeItem("afl-live-round-cache");
+  } catch (e) {
+    log("Failed to clear round cache: " + e.message);
+  }
+}
+
+function trimString(value, maxLength) {
+  if (value === undefined || value === null) {
+    return "";
+  }
+
+  value = String(value);
+
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return value.substring(0, maxLength - 1);
+}
+
+function getField(game, names, fallback) {
+  var i;
+
+  for (i = 0; i < names.length; i++) {
+    if (game[names[i]] !== undefined && game[names[i]] !== null && game[names[i]] !== "") {
+      return game[names[i]];
+    }
+  }
+
+  return fallback;
+}
+
+function getTeamAbbr(teamName) {
+  var parts;
+  var abbr;
+  var i;
+
+  if (!teamName) {
+    return "TBC";
+  }
+
+  if (TEAM_ABBR[teamName]) {
+    return TEAM_ABBR[teamName];
+  }
+
+  parts = String(teamName).split(" ");
+  abbr = "";
+
+  for (i = 0; i < parts.length; i++) {
+    if (parts[i].length > 0) {
+      abbr += parts[i].charAt(0).toUpperCase();
+    }
+  }
+
+  if (abbr.length > 4) {
+    abbr = abbr.substring(0, 4);
+  }
+
+  return abbr;
+}
+
+function getRawDateValue(game) {
+  return getField(game, [
+    "date",
+    "datetime",
+    "timestr",
+    "localtime",
+    "localTime",
+    "starttime",
+    "startTime",
+    "utcStartTime",
+    "utc_start_time"
+  ], null);
+}
+
+function parseGameDate(game) {
+  var rawDate;
+  var text;
+  var match;
+  var parsed;
+  var year;
+  var month;
+  var day;
+  var hour;
+  var minute;
+
+  rawDate = getRawDateValue(game);
+
+  if (!rawDate) {
+    return null;
+  }
+
+  text = String(rawDate);
+
+  match = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2}))?/);
+
+  if (match) {
+    year = parseInt(match[1], 10);
+    month = parseInt(match[2], 10) - 1;
+    day = parseInt(match[3], 10);
+
+    if (match[4] !== undefined && match[5] !== undefined) {
+      hour = parseInt(match[4], 10);
+      minute = parseInt(match[5], 10);
+    } else {
+      hour = 0;
+      minute = 0;
+    }
+
+    return new Date(year, month, day, hour, minute, 0);
+  }
+
+  parsed = Date.parse(text);
+
+  if (!isNaN(parsed)) {
+    return new Date(parsed);
+  }
+
+  return null;
+}
+
+function compareGamesByDate(a, b) {
+  var ad;
+  var bd;
+
+  ad = parseGameDate(a);
+  bd = parseGameDate(b);
+
+  if (ad && bd) {
+    return ad.getTime() - bd.getTime();
+  }
+
+  if (ad && !bd) {
+    return -1;
+  }
+
+  if (!ad && bd) {
+    return 1;
+  }
+
+  return 0;
+}
+
+function getGameComplete(game) {
+  var complete;
+
+  complete = getField(game, ["complete"], 0);
+  complete = parseInt(complete, 10);
+
+  if (isNaN(complete)) {
+    complete = 0;
+  }
+
+  return complete;
+}
+
+function getScoreText(scoreValue) {
+  if (scoreValue === undefined || scoreValue === null || scoreValue === "") {
+    return "-";
+  }
+
+  return String(scoreValue);
+}
+
+function getGameTitle(game) {
+  var hteam;
+  var ateam;
+  var hscore;
+  var ascore;
+  var title;
+
+  hteam = getField(game, ["hteam", "homeTeam", "home_team", "hometeam"], "Home");
+  ateam = getField(game, ["ateam", "awayTeam", "away_team", "awayteam"], "Away");
+
+  hscore = getField(game, ["hscore", "hteamScore", "homeScore", "home_score"], "");
+  ascore = getField(game, ["ascore", "ateamScore", "awayScore", "away_score"], "");
+
+  title = getTeamAbbr(hteam) + " " + getScoreText(hscore) + " v " + getTeamAbbr(ateam) + " " + getScoreText(ascore);
+
+  return trimString(title, 38);
+}
+
+function getShortDate(game) {
+  var gameDate;
+  var day;
+  var month;
+  var hours;
+  var minutes;
+
+  gameDate = parseGameDate(game);
+
+  if (!gameDate) {
+    return "Date TBC";
+  }
+
+  day = gameDate.getDate();
+  month = gameDate.getMonth() + 1;
+  hours = gameDate.getHours();
+  minutes = gameDate.getMinutes();
+
+  if (minutes < 10) {
+    minutes = "0" + minutes;
+  }
+
+  if (hours === 0 && minutes === "00") {
+    return day + "/" + month;
+  }
+
+  return day + "/" + month + " " + hours + ":" + minutes;
+}
+
+function getGameStatusText(game) {
+  var complete;
+
+  complete = getGameComplete(game);
+
+  if (complete === 100) {
+    return "Final";
+  }
+
+  if (complete === 0) {
+    return getShortDate(game);
+  }
+
+  return complete + "%";
+}
+
+function getGameSubtitle(game) {
+  var statusText;
+  var subtitle;
+
+  statusText = getGameStatusText(game);
+
+  if (SHOW_CURRENT_ROUND) {
+    subtitle = statusText;
+  } else {
+    subtitle = "Live " + statusText;
+  }
+
+  return trimString(subtitle, 78);
+}
+
+function getRoundTitle() {
+  if (CACHED_ROUND !== null && CACHED_ROUND !== undefined && CACHED_ROUND !== "") {
+    return "Round " + CACHED_ROUND;
+  }
+
+  return "Round";
+}
+
+
+
+function findClosestRound(games) {
+  var now;
+  var closestRound;
+  var closestDiff;
+  var i;
+  var gameDate;
+  var diff;
+
+  now = new Date();
+  closestRound = null;
+  closestDiff = null;
+
+  for (i = 0; i < games.length; i++) {
+    gameDate = parseGameDate(games[i]);
+
+    if (!gameDate) {
+      continue;
+    }
+
+    diff = Math.abs(gameDate.getTime() - now.getTime());
+
+    if (closestDiff === null || diff < closestDiff) {
+      closestDiff = diff;
+      closestRound = getField(games[i], ["round"], null);
+    }
+  }
+
+  return closestRound;
+}
+
+function filterGames(games) {
+  var filtered;
+  var i;
+  var complete;
+
+  filtered = [];
+
+  if (SHOW_CURRENT_ROUND) {
+    for (i = 0; i < games.length; i++) {
+      filtered.push(games[i]);
+    }
+
+    filtered.sort(compareGamesByDate);
+
+    return {
+      games: filtered,
+      status: getRoundTitle()
+    };
+  }
+
+  for (i = 0; i < games.length; i++) {
+    complete = getGameComplete(games[i]);
+
+    if (complete !== 0 && complete !== 100) {
+      filtered.push(games[i]);
+    }
+  }
+
+  filtered.sort(compareGamesByDate);
+
+  return {
+    games: filtered,
+    status: getRoundTitle()
+  };
+}
+
+
+function sendStatusToWatch(message) {
+  var payload;
+
+  payload = {};
+  payload[KEY_COUNT] = 0;
+  payload[KEY_STATUS] = trimString(message, 78);
+
+  Pebble.sendAppMessage(
+    payload,
+    function() {
+      log("Status sent");
+    },
+    function(e) {
+      log("Status send failed: " + JSON.stringify(e));
+    }
+  );
+}
+
+function sendGamesToWatch(games, statusText) {
+  var payload;
+  var count;
+  var i;
+  var titleKey;
+  var subtitleKey;
+
+  payload = {};
+  count = games.length;
+
+  if (count > MAX_GAMES) {
+    count = MAX_GAMES;
+  }
+
+  payload[KEY_COUNT] = count;
+  payload[KEY_STATUS] = trimString(statusText, 78);
+
+  for (i = 0; i < count; i++) {
+    titleKey = KEY_TITLE_0 + (i * 2);
+    subtitleKey = KEY_SUBTITLE_0 + (i * 2);
+
+    payload[titleKey] = getGameTitle(games[i]);
+    payload[subtitleKey] = getGameSubtitle(games[i]);
+  }
+
+  Pebble.sendAppMessage(
+    payload,
+    function() {
+      log("Sent " + count + " games");
+    },
+    function(e) {
+      log("Game send failed: " + JSON.stringify(e));
+    }
+  );
+}
+
+function detectCurrentRoundThenFetchRound() {
+  var year;
+  var url;
+  var xhr;
+
+  year = getCurrentYear();
+  url = "https://api.squiggle.com.au/?q=games;year=" + year + ";format=json";
+
+  log("Detecting closest round using full-year query: " + url);
+  sendStatusToWatch("Detecting current round...");
+
+  xhr = new XMLHttpRequest();
+  xhr.open("GET", url, true);
+  xhr.timeout = 20000;
+
+  xhr.onreadystatechange = function() {
+    var data;
+    var round;
+
+    if (xhr.readyState !== 4) {
+      return;
+    }
+
+    if (xhr.status !== 200) {
+      sendStatusToWatch("Round detect HTTP " + xhr.status);
+      return;
+    }
+
+    try {
+      data = JSON.parse(xhr.responseText);
+
+      if (!data || !data.games || !data.games.length) {
+        sendStatusToWatch("No games returned");
+        return;
+      }
+
+      round = findClosestRound(data.games);
+
+      if (round === null || round === undefined || round === "") {
+        sendStatusToWatch("Unable to determine round");
+        return;
+      }
+
+      saveRoundCache(round, year);
+
+      fetchRoundGames(false);
+    } catch (e) {
+      log("Round detect parse error: " + e.message);
+      sendStatusToWatch("Round detect error");
+    }
+  };
+
+  xhr.ontimeout = function() {
+    sendStatusToWatch("Round detect timeout");
+  };
+
+  xhr.onerror = function() {
+    sendStatusToWatch("Round detect network error");
+  };
+
+  xhr.send();
+}
+
+function fetchRoundGames(forceRedetectOnEmpty) {
+  var year;
+  var url;
+  var xhr;
+
+  year = getCurrentYear();
+
+  if (!isRoundCacheValid()) {
+    detectCurrentRoundThenFetchRound();
+    return;
+  }
+
+  url = "https://api.squiggle.com.au/?q=games;year=" + year + ";round=" + CACHED_ROUND + ";format=json";
+
+  log("Fetching round-only query: " + url);
+
+  xhr = new XMLHttpRequest();
+  xhr.open("GET", url, true);
+  xhr.timeout = 20000;
+
+  xhr.onreadystatechange = function() {
+    var data;
+    var result;
+
+    if (xhr.readyState !== 4) {
+      return;
+    }
+
+    if (xhr.status !== 200) {
+      sendStatusToWatch("HTTP error " + xhr.status);
+      return;
+    }
+
+    try {
+      data = JSON.parse(xhr.responseText);
+
+      if (!data || !data.games || !data.games.length) {
+        if (forceRedetectOnEmpty) {
+          clearRoundCache();
+          detectCurrentRoundThenFetchRound();
+          return;
+        }
+
+        sendStatusToWatch("No games for round");
+        return;
+      }
+
+      result = filterGames(data.games);
+
+      if (!result.games || result.games.length === 0) {
+        if (!SHOW_CURRENT_ROUND && forceRedetectOnEmpty) {
+          clearRoundCache();
+          detectCurrentRoundThenFetchRound();
+          return;
+        }
+
+        sendStatusToWatch(result.status + ": none found");
+        return;
+      }
+
+      sendGamesToWatch(result.games, result.status);
+    } catch (e) {
+      log("Round fetch parse error: " + e.message);
+      sendStatusToWatch("Data parse error");
+    }
+  };
+
+  xhr.ontimeout = function() {
+    sendStatusToWatch("Request timed out");
+  };
+
+  xhr.onerror = function() {
+    sendStatusToWatch("Network error");
+  };
+
+  xhr.send();
+}
+
+function fetchAndSendScores() {
+  fetchRoundGames(true);
+}
+
+function scheduleRefresh() {
+  if (refreshTimer) {
+    clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
+
+  refreshTimer = setInterval(function() {
+    fetchAndSendScores();
+  }, REFRESH_MINUTES * 60 * 1000);
+
+  log("Refresh scheduled every " + REFRESH_MINUTES + " minute(s)");
+}
+
+function getSettingsUrl() {
+  var checked;
+  var html;
+
+  checked = "";
+
+  if (SHOW_CURRENT_ROUND) {
+    checked = "checked";
+  }
+
+  html = "";
+  html += "<!DOCTYPE html>";
+  html += "<html>";
+  html += "<head>";
+  html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
+  html += "<title>AFL Live Settings</title>";
+  html += "</head>";
+  html += "<body style='font-family:sans-serif;padding:20px;background:#f5f5f5;'>";
+  html += "<h2>AFL Live Scores</h2>";
+  html += "<div style='background:white;padding:15px;border-radius:8px;'>";
+  html += "<label style='font-size:16px;'>";
+  html += "<input type='checkbox' id='round' " + checked + "> ";
+  html += "Show current round - all games";
+  html += "</label>";
+  html += "<br><br>";
+  html += "<label>Refresh minutes</label>";
+  html += "<br>";
+  html += "<select id='mins' style='font-size:16px;width:100%;padding:8px;'>";
+  html += "<option value='1'>1 minute</option>";
+  html += "<option value='2'>2 minutes</option>";
+  html += "<option value='5'>5 minutes</option>";
+  html += "<option value='10'>10 minutes</option>";
+  html += "</select>";
+  html += "</div>";
+  html += "<br>";
+  html += "<button onclick='saveSettings()' style='font-size:18px;width:100%;padding:12px;'>Save</button>";
+  html += "<script>";
+  html += "document.getElementById('mins').value='" + REFRESH_MINUTES + "';";
+  html += "function saveSettings(){";
+  html += "var cfg={";
+  html += "showCurrentRound:document.getElementById('round').checked,";
+  html += "refreshMinutes:parseInt(document.getElementById('mins').value,10)";
+  html += "};";
+  html += "document.location='pebblejs://close#'+encodeURIComponent(JSON.stringify(cfg));";
+  html += "}";
+  html += "</script>";
+  html += "</body>";
+  html += "</html>";
+
+  return "data:text/html;charset=utf-8," + encodeURIComponent(html);
+}
+
+Pebble.addEventListener("ready", function() {
+  log("Pebble JS ready");
+
+  loadSettings();
+
+  fetchAndSendScores();
+  scheduleRefresh();
+});
+
+Pebble.addEventListener("appmessage", function(e) {
+  log("Refresh requested from watch");
+
+  fetchAndSendScores();
+});
+
+Pebble.addEventListener("showConfiguration", function() {
+  log("Settings button clicked");
+
+  loadSettings();
+
+  Pebble.openURL(getSettingsUrl());
+});
+
+Pebble.addEventListener("webviewclosed", function(e) {
+  var decoded;
+  var config;
+
+  log("Settings webview closed");
+
+  if (!e || !e.response) {
+    log("No settings response returned");
+    return;
+  }
+
+  try {
+    decoded = decodeURIComponent(e.response);
+    config = JSON.parse(decoded);
+
+    saveSettings(config);
+
+    clearRoundCache();
+
+    fetchAndSendScores();
+    scheduleRefresh();
+  } catch (err) {
+    log("Settings parse error: " + err.message);
+  }
+});
