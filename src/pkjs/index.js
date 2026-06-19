@@ -291,6 +291,12 @@ function parseGameDate(game) {
 
   text = String(rawDate);
 
+  /*
+    Handles:
+      2026-06-19
+      2026-06-19 18:10:00
+      2026-06-19T18:10:00
+  */
   match = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{2}))?/);
 
   if (match) {
@@ -439,15 +445,25 @@ function getGameSubtitle(game) {
   return trimString(subtitle, 78);
 }
 
-function getRoundTitle() {
+function getRoundTitle(isLiveOnly) {
+  var title;
+
   if (CACHED_ROUND !== null && CACHED_ROUND !== undefined && CACHED_ROUND !== "") {
-    return "Round " + CACHED_ROUND;
+    if (isLiveOnly) {
+      title = "Live Games - Round " + CACHED_ROUND;
+    } else {
+      title = "Round " + CACHED_ROUND;
+    }
+  } else {
+    if (isLiveOnly) {
+      title = "Live Games";
+    } else {
+      title = "Round";
+    }
   }
 
-  return "Round";
+  return title;
 }
-
-
 
 function findClosestRound(games) {
   var now;
@@ -495,7 +511,7 @@ function filterGames(games) {
 
     return {
       games: filtered,
-      status: getRoundTitle()
+      status: getRoundTitle(false)
     };
   }
 
@@ -511,10 +527,9 @@ function filterGames(games) {
 
   return {
     games: filtered,
-    status: getRoundTitle()
+    status: getRoundTitle(true)
   };
 }
-
 
 function sendStatusToWatch(message) {
   var payload;
@@ -530,6 +545,28 @@ function sendStatusToWatch(message) {
     },
     function(e) {
       log("Status send failed: " + JSON.stringify(e));
+    }
+  );
+}
+
+function sendEmptyStateToWatch(sectionTitle, titleText, subtitleText) {
+  var payload;
+
+  payload = {};
+
+  payload[KEY_COUNT] = 1;
+  payload[KEY_STATUS] = trimString(sectionTitle, 78);
+
+  payload[KEY_TITLE_0] = trimString(titleText, 38);
+  payload[KEY_SUBTITLE_0] = trimString(subtitleText, 78);
+
+  Pebble.sendAppMessage(
+    payload,
+    function() {
+      log("Empty state sent: " + sectionTitle + " - " + titleText);
+    },
+    function(e) {
+      log("Empty state send failed: " + JSON.stringify(e));
     }
   );
 }
@@ -676,20 +713,31 @@ function fetchRoundGames(forceRedetectOnEmpty) {
           return;
         }
 
-        sendStatusToWatch("No games for round");
+        sendEmptyStateToWatch(
+          getRoundTitle(!SHOW_CURRENT_ROUND),
+          "No games",
+          "No games for round"
+        );
         return;
       }
 
       result = filterGames(data.games);
 
       if (!result.games || result.games.length === 0) {
-        if (!SHOW_CURRENT_ROUND && forceRedetectOnEmpty) {
-          clearRoundCache();
-          detectCurrentRoundThenFetchRound();
-          return;
+        if (SHOW_CURRENT_ROUND) {
+          sendEmptyStateToWatch(
+            result.status,
+            "No games",
+            "No games found"
+          );
+        } else {
+          sendEmptyStateToWatch(
+            result.status,
+            "No live games",
+            "Currently in progress"
+          );
         }
 
-        sendStatusToWatch(result.status + ": none found");
         return;
       }
 
@@ -750,7 +798,7 @@ function getSettingsUrl() {
   html += "<div style='background:white;padding:15px;border-radius:8px;'>";
   html += "<label style='font-size:16px;'>";
   html += "<input type='checkbox' id='round' " + checked + "> ";
-  html += "Show current round - all games";
+  html += "Show All Games in Current Round?";
   html += "</label>";
   html += "<br><br>";
   html += "<label>Refresh minutes</label>";

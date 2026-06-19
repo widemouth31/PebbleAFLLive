@@ -1,13 +1,13 @@
 {
-    "author": "chrishardwick4@gmail.com",
+    "author": "Chris Hardwick",
     "dependencies": {},
     "keywords": [],
-    "name": "afl-live",
+    "name": "afl-live-scores",
     "pebble": {
         "capabilities": [
             "configurable"
         ],
-        "displayName": "AFL Live",
+        "displayName": "AFL Live Scores",
         "enableMultiJS": true,
         "messageKeys": [],
         "projectType": "native",
