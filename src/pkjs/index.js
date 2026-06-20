@@ -55,13 +55,16 @@ var TEAM_ABBR = {
   "Western Bulldogs": "WB"
 };
 
+
 function log(message) {
   console.log("AFL Live: " + message);
 }
 
+
 function getCurrentYear() {
   return new Date().getFullYear();
 }
+
 
 function loadSettings() {
   var raw;
@@ -98,6 +101,7 @@ function loadSettings() {
   }
 }
 
+
 function saveSettings(config) {
   var mins;
 
@@ -123,6 +127,7 @@ function saveSettings(config) {
   }
 }
 
+
 function loadRoundCache() {
   var raw;
   var parsed;
@@ -146,6 +151,7 @@ function loadRoundCache() {
   }
 }
 
+
 function saveRoundCache(round, year) {
   try {
     CACHED_ROUND = round;
@@ -163,6 +169,7 @@ function saveRoundCache(round, year) {
     log("Failed to save round cache: " + e.message);
   }
 }
+
 
 function isRoundCacheValid() {
   var now;
@@ -191,6 +198,7 @@ function isRoundCacheValid() {
   return true;
 }
 
+
 function clearRoundCache() {
   CACHED_ROUND = null;
   CACHED_ROUND_YEAR = null;
@@ -202,6 +210,7 @@ function clearRoundCache() {
     log("Failed to clear round cache: " + e.message);
   }
 }
+
 
 function trimString(value, maxLength) {
   if (value === undefined || value === null) {
@@ -217,6 +226,7 @@ function trimString(value, maxLength) {
   return value.substring(0, maxLength - 1);
 }
 
+
 function getField(game, names, fallback) {
   var i;
 
@@ -228,6 +238,7 @@ function getField(game, names, fallback) {
 
   return fallback;
 }
+
 
 function getTeamAbbr(teamName) {
   var parts;
@@ -258,6 +269,7 @@ function getTeamAbbr(teamName) {
   return abbr;
 }
 
+
 function getRawDateValue(game) {
   return getField(game, [
     "date",
@@ -271,6 +283,7 @@ function getRawDateValue(game) {
     "utc_start_time"
   ], null);
 }
+
 
 function parseGameDate(game) {
   var rawDate;
@@ -324,6 +337,7 @@ function parseGameDate(game) {
   return null;
 }
 
+
 function compareGamesByDate(a, b) {
   var ad;
   var bd;
@@ -346,6 +360,7 @@ function compareGamesByDate(a, b) {
   return 0;
 }
 
+
 function getGameComplete(game) {
   var complete;
 
@@ -359,6 +374,25 @@ function getGameComplete(game) {
   return complete;
 }
 
+function getNumericScore(game, side) {
+  var score;
+
+  if (side === "home") {
+    score = getField(game, ["hscore", "hteamScore", "homeScore", "home_score"], null);
+  } else {
+    score = getField(game, ["ascore", "ateamScore", "awayScore", "away_score"], null);
+  }
+
+  score = parseInt(score, 10);
+
+  if (isNaN(score)) {
+    return null;
+  }
+
+  return score;
+}
+
+
 function getScoreText(scoreValue) {
   if (scoreValue === undefined || scoreValue === null || scoreValue === "") {
     return "-";
@@ -367,9 +401,44 @@ function getScoreText(scoreValue) {
   return String(scoreValue);
 }
 
+function getScoreDisplay(game, side) {
+  var goals;
+  var behinds;
+  var score;
+
+  if (side === "home") {
+    goals = getField(game, ["hgoals", "homeGoals", "home_goals"], null);
+    behinds = getField(game, ["hbehinds", "homeBehinds", "home_behinds"], null);
+    score = getField(game, ["hscore", "hteamScore", "homeScore", "home_score"], "");
+  } else {
+    goals = getField(game, ["agoals", "awayGoals", "away_goals"], null);
+    behinds = getField(game, ["abehinds", "awayBehinds", "away_behinds"], null);
+    score = getField(game, ["ascore", "ateamScore", "awayScore", "away_score"], "");
+  }
+
+  if (
+    goals !== null &&
+    goals !== undefined &&
+    goals !== "" &&
+    behinds !== null &&
+    behinds !== undefined &&
+    behinds !== "" &&
+    score !== null &&
+    score !== undefined &&
+    score !== ""
+  ) {
+    return goals + "." + behinds + "." + score;
+  }
+
+  return getScoreText(score);
+}
+
+
 function getGameTitle(game) {
   var hteam;
   var ateam;
+  var hscoreText;
+  var ascoreText;
   var hscore;
   var ascore;
   var title;
@@ -377,13 +446,21 @@ function getGameTitle(game) {
   hteam = getField(game, ["hteam", "homeTeam", "home_team", "hometeam"], "Home");
   ateam = getField(game, ["ateam", "awayTeam", "away_team", "awayteam"], "Away");
 
-  hscore = getField(game, ["hscore", "hteamScore", "homeScore", "home_score"], "");
-  ascore = getField(game, ["ascore", "ateamScore", "awayScore", "away_score"], "");
+  hscoreText = getScoreDisplay(game, "home");
+  ascoreText = getScoreDisplay(game, "away");
 
-  title = getTeamAbbr(hteam) + " " + getScoreText(hscore) + " v " + getTeamAbbr(ateam) + " " + getScoreText(ascore);
+  hscore = getNumericScore(game, "home");
+  ascore = getNumericScore(game, "away");
+
+  if (hscore !== null && ascore !== null && ascore > hscore) {
+    title = getTeamAbbr(ateam) + " " + ascoreText;
+  } else {
+    title = getTeamAbbr(hteam) + " " + hscoreText;
+  }
 
   return trimString(title, 38);
 }
+
 
 function getShortDate(game) {
   var gameDate;
@@ -431,15 +508,38 @@ function getGameStatusText(game) {
 }
 
 function getGameSubtitle(game) {
+  var hteam;
+  var ateam;
+  var hscoreText;
+  var ascoreText;
+  var hscore;
+  var ascore;
   var statusText;
   var subtitle;
 
+  hteam = getField(game, ["hteam", "homeTeam", "home_team", "hometeam"], "Home");
+  ateam = getField(game, ["ateam", "awayTeam", "away_team", "awayteam"], "Away");
+
+  hscoreText = getScoreDisplay(game, "home");
+  ascoreText = getScoreDisplay(game, "away");
+
+  hscore = getNumericScore(game, "home");
+  ascore = getNumericScore(game, "away");
+
   statusText = getGameStatusText(game);
 
-  if (SHOW_CURRENT_ROUND) {
-    subtitle = statusText;
+  if (hscore !== null && ascore !== null && ascore > hscore) {
+    if (SHOW_CURRENT_ROUND) {
+      subtitle = getTeamAbbr(hteam) + " " + hscoreText + " " + statusText;
+    } else {
+      subtitle = getTeamAbbr(hteam) + " " + hscoreText + " Live " + statusText;
+    }
   } else {
-    subtitle = "Live " + statusText;
+    if (SHOW_CURRENT_ROUND) {
+      subtitle = getTeamAbbr(ateam) + " " + ascoreText + " " + statusText;
+    } else {
+      subtitle = getTeamAbbr(ateam) + " " + ascoreText + " Live " + statusText;
+    }
   }
 
   return trimString(subtitle, 78);
@@ -837,11 +937,46 @@ Pebble.addEventListener("ready", function() {
   scheduleRefresh();
 });
 
-Pebble.addEventListener("appmessage", function(e) {
-  log("Refresh requested from watch");
 
+Pebble.addEventListener("appmessage", function(e) {
+  var isToggle;
+
+  log("Message received from watch: " + JSON.stringify(e.payload));
+
+  isToggle = false;
+
+  if (e.payload) {
+    if (e.payload["1"] !== undefined) {
+      isToggle = true;
+    }
+
+    if (e.payload[1] !== undefined) {
+      isToggle = true;
+    }
+
+    if (e.payload.MODE !== undefined) {
+      isToggle = true;
+    }
+  }
+
+  if (isToggle) {
+    SHOW_CURRENT_ROUND = !SHOW_CURRENT_ROUND;
+
+    localStorage.setItem("afl-live-settings", JSON.stringify({
+      showCurrentRound: SHOW_CURRENT_ROUND,
+      refreshMinutes: REFRESH_MINUTES
+    }));
+
+    log("Mode toggled from watch. SHOW_CURRENT_ROUND=" + SHOW_CURRENT_ROUND);
+
+    fetchAndSendScores();
+    return;
+  }
+
+  log("Refresh requested from watch");
   fetchAndSendScores();
 });
+
 
 Pebble.addEventListener("showConfiguration", function() {
   log("Settings button clicked");

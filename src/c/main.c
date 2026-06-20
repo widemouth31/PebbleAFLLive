@@ -33,85 +33,106 @@ enum {
 };
 
 static Window *s_main_window;
-static SimpleMenuLayer *s_menu_layer;
-
-static SimpleMenuSection s_sections[1];
-static SimpleMenuItem s_items[MAX_GAMES];
+static MenuLayer *s_menu_layer;
 
 static char s_title_buffers[MAX_GAMES][TITLE_LEN];
 static char s_subtitle_buffers[MAX_GAMES][SUBTITLE_LEN];
 
-static char s_status_title[TITLE_LEN];
-static char s_status_subtitle[SUBTITLE_LEN];
 static char s_section_title[TITLE_LEN];
 
 static int s_item_count = 0;
 
 static void request_refresh(void);
-static void rebuild_menu_layer(void);
+static void request_toggle_mode(void);
+static void set_status(const char *title, const char *subtitle);
+static void update_menu_layer(void);
 
-static void rebuild_menu_layer(void) {
-  Layer *window_layer;
-  GRect bounds;
+static uint16_t menu_get_num_sections_callback(MenuLayer *menu_layer, void *data);
+static uint16_t menu_get_num_rows_callback(MenuLayer *menu_layer, uint16_t section_index, void *data);
+static int16_t menu_get_header_height_callback(MenuLayer *menu_layer, uint16_t section_index, void *data);
+static int16_t menu_get_cell_height_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data);
+static void menu_draw_header_callback(GContext *ctx, const Layer *cell_layer, uint16_t section_index, void *data);
+static void menu_draw_row_callback(GContext *ctx, const Layer *cell_layer, MenuIndex *cell_index, void *data);
+static void menu_select_click_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data);
+static void menu_select_long_click_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data);
 
-  if (!s_main_window) {
-    return;
-  }
-
-  window_layer = window_get_root_layer(s_main_window);
-  bounds = layer_get_bounds(window_layer);
-
+static void update_menu_layer(void) {
   if (s_menu_layer) {
-    simple_menu_layer_destroy(s_menu_layer);
-    s_menu_layer = NULL;
+    menu_layer_reload_data(s_menu_layer);
   }
-
-  s_sections[0].title = s_section_title;
-  s_sections[0].items = s_items;
-  s_sections[0].num_items = s_item_count;
-
-  s_menu_layer = simple_menu_layer_create(bounds, s_main_window, s_sections, 1, NULL);
-  layer_add_child(window_layer, simple_menu_layer_get_layer(s_menu_layer));
 }
 
 static void set_status(const char *title, const char *subtitle) {
   snprintf(s_section_title, sizeof(s_section_title), "%s", title);
 
-  snprintf(s_status_title, sizeof(s_status_title), "%s", title);
-  snprintf(s_status_subtitle, sizeof(s_status_subtitle), "%s", subtitle);
-
-  s_items[0].title = s_status_title;
-  s_items[0].subtitle = s_status_subtitle;
-  s_items[0].callback = NULL;
+  snprintf(s_title_buffers[0], TITLE_LEN, "%s", title);
+  snprintf(s_subtitle_buffers[0], SUBTITLE_LEN, "%s", subtitle);
 
   s_item_count = 1;
 
-  s_sections[0].title = s_section_title;
-  s_sections[0].items = s_items;
-  s_sections[0].num_items = s_item_count;
-
-  rebuild_menu_layer();
+  update_menu_layer();
 }
 
-static void menu_select_callback(int index, void *ctx) {
-  APP_LOG(APP_LOG_LEVEL_INFO, "Manual refresh requested from menu item %d", index);
+static uint16_t menu_get_num_sections_callback(MenuLayer *menu_layer, void *data) {
+  return 1;
+}
+
+static uint16_t menu_get_num_rows_callback(MenuLayer *menu_layer, uint16_t section_index, void *data) {
+  return s_item_count;
+}
+
+static int16_t menu_get_header_height_callback(MenuLayer *menu_layer, uint16_t section_index, void *data) {
+  return 22;
+}
+
+static int16_t menu_get_cell_height_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data) {
+  return 44;
+}
+
+static void menu_draw_header_callback(GContext *ctx, const Layer *cell_layer, uint16_t section_index, void *data) {
+  GRect bounds = layer_get_bounds(cell_layer);
+
+  graphics_context_set_text_color(ctx, GColorBlack);
+
+  graphics_draw_text(
+    ctx,
+    s_section_title,
+    fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+    bounds,
+    GTextOverflowModeTrailingEllipsis,
+    GTextAlignmentCenter,
+    NULL
+  );
+}
+
+static void menu_draw_row_callback(GContext *ctx, const Layer *cell_layer, MenuIndex *cell_index, void *data) {
+  int row = cell_index->row;
+
+  if (row < 0 || row >= s_item_count) {
+    return;
+  }
+
+  menu_cell_basic_draw(
+    ctx,
+    cell_layer,
+    s_title_buffers[row],
+    s_subtitle_buffers[row],
+    NULL
+  );
+}
+
+static void menu_select_click_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data) {
+  APP_LOG(APP_LOG_LEVEL_INFO, "Select clicked - refresh");
 
   set_status("Refreshing...", "Fetching AFL scores");
 
   request_refresh();
 }
 
-static void update_menu_from_buffer(void) {
-  int i;
+static void menu_select_long_click_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data) {
+  APP_LOG(APP_LOG_LEVEL_INFO, "Select long-clicked - toggle mode");
 
-  for (i = 0; i < s_item_count; i++) {
-    s_items[i].callback = menu_select_callback;
-  }
-
-  s_sections[0].items = s_items;
-  s_sections[0].num_items = s_item_count;
-
-  rebuild_menu_layer();
+  request_toggle_mode();
 }
 
 static void inbox_received_callback(DictionaryIterator *iter, void *context) {
@@ -123,17 +144,12 @@ static void inbox_received_callback(DictionaryIterator *iter, void *context) {
   status_tuple = dict_find(iter, KEY_STATUS);
   count_tuple = dict_find(iter, KEY_COUNT);
 
-if (status_tuple) {
-  APP_LOG(APP_LOG_LEVEL_INFO, "Status from phone: %s", status_tuple->value->cstring);
-
-  if (status_tuple->value->cstring[0] != '\0') {
+  if (status_tuple && status_tuple->value->cstring[0] != '\0') {
+    APP_LOG(APP_LOG_LEVEL_INFO, "Status from phone: %s", status_tuple->value->cstring);
     snprintf(s_section_title, sizeof(s_section_title), "%s", status_tuple->value->cstring);
   } else {
     snprintf(s_section_title, sizeof(s_section_title), "%s", "AFL Live");
   }
-} else {
-  snprintf(s_section_title, sizeof(s_section_title), "%s", "AFL Live");
-}
 
   count = 0;
 
@@ -179,15 +195,11 @@ if (status_tuple) {
     } else {
       snprintf(s_subtitle_buffers[i], SUBTITLE_LEN, "%s", "");
     }
-
-    s_items[i].title = s_title_buffers[i];
-    s_items[i].subtitle = s_subtitle_buffers[i];
-    s_items[i].callback = menu_select_callback;
   }
 
   s_item_count = count;
 
-  update_menu_from_buffer();
+  update_menu_layer();
 }
 
 static void inbox_dropped_callback(AppMessageResult reason, void *context) {
@@ -211,7 +223,7 @@ static void request_refresh(void) {
   result = app_message_outbox_begin(&iter);
 
   if (result != APP_MSG_OK) {
-    APP_LOG(APP_LOG_LEVEL_ERROR, "Unable to begin outbox message. Result: %d", result);
+    APP_LOG(APP_LOG_LEVEL_ERROR, "Unable to begin refresh message. Result: %d", result);
     return;
   }
 
@@ -221,15 +233,58 @@ static void request_refresh(void) {
   result = app_message_outbox_send();
 
   if (result != APP_MSG_OK) {
-    APP_LOG(APP_LOG_LEVEL_ERROR, "Unable to send refresh request. Result: %d", result);
+    APP_LOG(APP_LOG_LEVEL_ERROR, "Unable to send refresh message. Result: %d", result);
+  }
+}
+
+static void request_toggle_mode(void) {
+  DictionaryIterator *iter;
+  AppMessageResult result;
+
+  set_status("Switching view", "Please wait...");
+
+  result = app_message_outbox_begin(&iter);
+
+  if (result != APP_MSG_OK) {
+    APP_LOG(APP_LOG_LEVEL_ERROR, "Unable to begin toggle message. Result: %d", result);
+    return;
+  }
+
+  dict_write_uint8(iter, KEY_MODE, 1);
+  dict_write_end(iter);
+
+  result = app_message_outbox_send();
+
+  if (result != APP_MSG_OK) {
+    APP_LOG(APP_LOG_LEVEL_ERROR, "Unable to send toggle message. Result: %d", result);
   }
 }
 
 static void main_window_load(Window *window) {
+  Layer *window_layer;
+  GRect bounds;
+
+  window_layer = window_get_root_layer(window);
+  bounds = layer_get_bounds(window_layer);
+
   snprintf(s_section_title, sizeof(s_section_title), "%s", "AFL Live");
-  s_sections[0].title = s_section_title;
-  s_sections[0].items = s_items;
-  s_sections[0].num_items = 0;
+
+  s_menu_layer = menu_layer_create(bounds);
+
+  menu_layer_set_callbacks(s_menu_layer, NULL, (MenuLayerCallbacks) {
+    .get_num_sections = menu_get_num_sections_callback,
+    .get_num_rows = menu_get_num_rows_callback,
+    .get_header_height = menu_get_header_height_callback,
+    .get_cell_height = menu_get_cell_height_callback,
+    .draw_header = menu_draw_header_callback,
+    .draw_row = menu_draw_row_callback,
+    .select_click = menu_select_click_callback,
+    .select_long_click = menu_select_long_click_callback
+  });
+
+  menu_layer_set_click_config_onto_window(s_menu_layer, window);
+
+  layer_add_child(window_layer, menu_layer_get_layer(s_menu_layer));
 
   set_status("AFL Live", "Loading scores...");
 
@@ -238,7 +293,7 @@ static void main_window_load(Window *window) {
 
 static void main_window_unload(Window *window) {
   if (s_menu_layer) {
-    simple_menu_layer_destroy(s_menu_layer);
+    menu_layer_destroy(s_menu_layer);
     s_menu_layer = NULL;
   }
 }
