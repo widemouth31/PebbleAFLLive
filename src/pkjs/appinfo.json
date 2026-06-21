@@ -3,7 +3,7 @@
   "shortName": "AFL Live Scores",
   "longName": "AFL Live Scores",
   "companyName": "Chris Hardwick",
-  "versionLabel": "1.1.0",
+  "versionLabel": "1.2.0",
   "sdkVersion": "3",
   "targetPlatforms": [
     "aplite",
@@ -42,6 +42,16 @@
     "SUBTITLE_8": 27,
     "TITLE_9": 28,
     "SUBTITLE_9": 29
+    "STATUSLINE_0": 30,
+    "STATUSLINE_1": 31,
+    "STATUSLINE_2": 32,
+    "STATUSLINE_3": 33,
+    "STATUSLINE_4": 34,
+    "STATUSLINE_5": 35,
+    "STATUSLINE_6": 36,
+    "STATUSLINE_7": 37,
+    "STATUSLINE_8": 38,
+    "STATUSLINE_9": 39
   },
   "resources": {
     "media": []

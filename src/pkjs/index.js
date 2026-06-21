@@ -5,6 +5,7 @@ var KEY_STATUS = 3;
 
 var KEY_TITLE_0 = 10;
 var KEY_SUBTITLE_0 = 11;
+var KEY_STATUSLINE_0 = 30;
 
 var SHOW_CURRENT_ROUND = false;
 var REFRESH_MINUTES = 2;
@@ -17,41 +18,41 @@ var CACHED_ROUND_TIME = 0;
 var refreshTimer = null;
 
 var TEAM_ABBR = {
-  "Adelaide": "ADE",
-  "Adelaide Crows": "ADE",
-  "Brisbane": "BRI",
-  "Brisbane Lions": "BRI",
-  "Carlton": "CAR",
-  "Carlton Blues": "CAR",
-  "Collingwood": "COL",
-  "Collingwood Magpies": "COL",
+  "Adelaide": "ADEL",
+  "Adelaide Crows": "ADEL",
+  "Brisbane": "BRIS",
+  "Brisbane Lions": "BRIS",
+  "Carlton": "CARL",
+  "Carlton Blues": "CARL",
+  "Collingwood": "COLL",
+  "Collingwood Magpies": "COLL",
   "Essendon": "ESS",
   "Essendon Bombers": "ESS",
-  "Fremantle": "FRE",
-  "Fremantle Dockers": "FRE",
-  "Geelong": "GEE",
-  "Geelong Cats": "GEE",
+  "Fremantle": "FREO",
+  "Fremantle Dockers": "FREO",
+  "Geelong": "GEEL",
+  "Geelong Cats": "GEEL",
   "Gold Coast": "GCS",
   "Gold Coast Suns": "GCS",
   "Greater Western Sydney": "GWS",
   "GWS": "GWS",
   "GWS Giants": "GWS",
-  "Hawthorn": "HAW",
-  "Hawthorn Hawks": "HAW",
-  "Melbourne": "MEL",
-  "Melbourne Demons": "MEL",
+  "Hawthorn": "HAWKS",
+  "Hawthorn Hawks": "HAWKS",
+  "Melbourne": "MELB",
+  "Melbourne Demons": "MELB",
   "North Melbourne": "NM",
   "North Melbourne Kangaroos": "NM",
   "Port Adelaide": "PA",
   "Port Adelaide Power": "PA",
-  "Richmond": "RIC",
-  "Richmond Tigers": "RIC",
-  "St Kilda": "STK",
-  "St Kilda Saints": "STK",
+  "Richmond": "RICH",
+  "Richmond Tigers": "RICH",
+  "St Kilda": "SAINTS",
+  "St Kilda Saints": "SAINTS",
   "Sydney": "SYD",
   "Sydney Swans": "SYD",
-  "West Coast": "WCE",
-  "West Coast Eagles": "WCE",
+  "West Coast": "EAGLES",
+  "West Coast Eagles": "EAGLES",
   "Western Bulldogs": "WB"
 };
 
@@ -491,8 +492,14 @@ function getShortDate(game) {
   return day + "/" + month + " " + hours + ":" + minutes;
 }
 
-function getGameStatusText(game) {
+
+function getEstimatedQuarterText(game) {
   var complete;
+  var quarter;
+  var quarterStart;
+  var percentIntoQuarter;
+  var minutesElapsed;
+  var minutesLeft;
 
   complete = getGameComplete(game);
 
@@ -504,8 +511,37 @@ function getGameStatusText(game) {
     return getShortDate(game);
   }
 
-  return complete + "%";
+  if (complete < 25) {
+    quarter = 1;
+    quarterStart = 0;
+  } else if (complete < 50) {
+    quarter = 2;
+    quarterStart = 25;
+  } else if (complete < 75) {
+    quarter = 3;
+    quarterStart = 50;
+  } else {
+    quarter = 4;
+    quarterStart = 75;
+  }
+
+  percentIntoQuarter = complete - quarterStart;
+
+  minutesElapsed = Math.floor((percentIntoQuarter / 25) * 20);
+  minutesLeft = 20 - minutesElapsed;
+
+  if (minutesLeft < 0) {
+    minutesLeft = 0;
+  }
+
+  return "Q" + quarter + " ~" + minutesLeft + "m left";
 }
+
+
+function getGameStatusText(game) {
+  return getEstimatedQuarterText(game);
+}
+
 
 function getGameSubtitle(game) {
   var hteam;
@@ -514,7 +550,6 @@ function getGameSubtitle(game) {
   var ascoreText;
   var hscore;
   var ascore;
-  var statusText;
   var subtitle;
 
   hteam = getField(game, ["hteam", "homeTeam", "home_team", "hometeam"], "Home");
@@ -526,24 +561,30 @@ function getGameSubtitle(game) {
   hscore = getNumericScore(game, "home");
   ascore = getNumericScore(game, "away");
 
-  statusText = getGameStatusText(game);
-
   if (hscore !== null && ascore !== null && ascore > hscore) {
-    if (SHOW_CURRENT_ROUND) {
-      subtitle = getTeamAbbr(hteam) + " " + hscoreText + " " + statusText;
-    } else {
-      subtitle = getTeamAbbr(hteam) + " " + hscoreText + " Live " + statusText;
-    }
+    subtitle = getTeamAbbr(hteam) + " " + hscoreText;
   } else {
-    if (SHOW_CURRENT_ROUND) {
-      subtitle = getTeamAbbr(ateam) + " " + ascoreText + " " + statusText;
-    } else {
-      subtitle = getTeamAbbr(ateam) + " " + ascoreText + " Live " + statusText;
-    }
+    subtitle = getTeamAbbr(ateam) + " " + ascoreText;
   }
 
   return trimString(subtitle, 78);
 }
+
+
+function getGameStatusLine(game) {
+  var statusText;
+
+  statusText = getGameStatusText(game);
+
+  if (SHOW_CURRENT_ROUND) {
+    return trimString(statusText, 78);
+  }
+
+  return trimString("Live " + statusText, 78);
+}
+
+
+
 
 function getRoundTitle(isLiveOnly) {
   var title;
@@ -649,6 +690,7 @@ function sendStatusToWatch(message) {
   );
 }
 
+
 function sendEmptyStateToWatch(sectionTitle, titleText, subtitleText) {
   var payload;
 
@@ -659,6 +701,7 @@ function sendEmptyStateToWatch(sectionTitle, titleText, subtitleText) {
 
   payload[KEY_TITLE_0] = trimString(titleText, 38);
   payload[KEY_SUBTITLE_0] = trimString(subtitleText, 78);
+  payload[KEY_STATUSLINE_0] = "";
 
   Pebble.sendAppMessage(
     payload,
@@ -670,6 +713,7 @@ function sendEmptyStateToWatch(sectionTitle, titleText, subtitleText) {
     }
   );
 }
+
 
 function sendGamesToWatch(games, statusText) {
   var payload;
@@ -694,6 +738,7 @@ function sendGamesToWatch(games, statusText) {
 
     payload[titleKey] = getGameTitle(games[i]);
     payload[subtitleKey] = getGameSubtitle(games[i]);
+    payload[KEY_STATUSLINE_0 + i] = getGameStatusLine(games[i]);
   }
 
   Pebble.sendAppMessage(

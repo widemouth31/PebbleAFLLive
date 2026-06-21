@@ -29,7 +29,18 @@ enum {
   KEY_TITLE_8 = 26,
   KEY_SUBTITLE_8 = 27,
   KEY_TITLE_9 = 28,
-  KEY_SUBTITLE_9 = 29
+  KEY_SUBTITLE_9 = 29,
+
+  KEY_STATUSLINE_0 = 30,
+  KEY_STATUSLINE_1 = 31,
+  KEY_STATUSLINE_2 = 32,
+  KEY_STATUSLINE_3 = 33,
+  KEY_STATUSLINE_4 = 34,
+  KEY_STATUSLINE_5 = 35,
+  KEY_STATUSLINE_6 = 36,
+  KEY_STATUSLINE_7 = 37,
+  KEY_STATUSLINE_8 = 38,
+  KEY_STATUSLINE_9 = 39
 };
 
 static Window *s_main_window;
@@ -37,6 +48,7 @@ static MenuLayer *s_menu_layer;
 
 static char s_title_buffers[MAX_GAMES][TITLE_LEN];
 static char s_subtitle_buffers[MAX_GAMES][SUBTITLE_LEN];
+static char s_statusline_buffers[MAX_GAMES][SUBTITLE_LEN];
 
 static char s_section_title[TITLE_LEN];
 
@@ -67,7 +79,7 @@ static void set_status(const char *title, const char *subtitle) {
 
   snprintf(s_title_buffers[0], TITLE_LEN, "%s", title);
   snprintf(s_subtitle_buffers[0], SUBTITLE_LEN, "%s", subtitle);
-
+  snprintf(s_statusline_buffers[0], SUBTITLE_LEN, "%s", "");
   s_item_count = 1;
 
   update_menu_layer();
@@ -86,7 +98,7 @@ static int16_t menu_get_header_height_callback(MenuLayer *menu_layer, uint16_t s
 }
 
 static int16_t menu_get_cell_height_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data) {
-  return 44;
+  return 78;
 }
 
 static void menu_draw_header_callback(GContext *ctx, const Layer *cell_layer, uint16_t section_index, void *data) {
@@ -97,7 +109,7 @@ static void menu_draw_header_callback(GContext *ctx, const Layer *cell_layer, ui
   graphics_draw_text(
     ctx,
     s_section_title,
-    fonts_get_system_font(FONT_KEY_GOTHIC_14_BOLD),
+    fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
     bounds,
     GTextOverflowModeTrailingEllipsis,
     GTextAlignmentCenter,
@@ -106,20 +118,82 @@ static void menu_draw_header_callback(GContext *ctx, const Layer *cell_layer, ui
 }
 
 static void menu_draw_row_callback(GContext *ctx, const Layer *cell_layer, MenuIndex *cell_index, void *data) {
-  int row = cell_index->row;
+  int row;
+  GRect bounds;
+  GRect title_rect;
+  GRect subtitle_rect;
+  GRect status_rect;
+  bool highlighted;
+
+  row = cell_index->row;
 
   if (row < 0 || row >= s_item_count) {
     return;
   }
 
-  menu_cell_basic_draw(
+  bounds = layer_get_bounds(cell_layer);
+
+  highlighted = menu_cell_layer_is_highlighted(cell_layer);
+
+  if (highlighted) {
+    graphics_context_set_text_color(ctx, GColorWhite);
+  } else {
+    graphics_context_set_text_color(ctx, GColorBlack);
+  }
+
+  title_rect = GRect(
+    4,
+    0,
+    bounds.size.w - 8,
+    32
+  );
+
+  subtitle_rect = GRect(
+    4,
+    28,
+    bounds.size.w - 8,
+    28
+  );
+
+  status_rect = GRect(
+    4,
+    54,
+    bounds.size.w - 8,
+    24
+  );
+
+  graphics_draw_text(
     ctx,
-    cell_layer,
     s_title_buffers[row],
+    fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD),
+    title_rect,
+    GTextOverflowModeTrailingEllipsis,
+    GTextAlignmentLeft,
+    NULL
+  );
+
+  graphics_draw_text(
+    ctx,
     s_subtitle_buffers[row],
+    fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
+    subtitle_rect,
+    GTextOverflowModeTrailingEllipsis,
+    GTextAlignmentLeft,
+    NULL
+  );
+
+  graphics_draw_text(
+    ctx,
+    s_statusline_buffers[row],
+    fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
+    status_rect,
+    GTextOverflowModeTrailingEllipsis,
+    GTextAlignmentLeft,
     NULL
   );
 }
+
+
 
 static void menu_select_click_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data) {
   APP_LOG(APP_LOG_LEVEL_INFO, "Select clicked - refresh");
@@ -177,12 +251,13 @@ static void inbox_received_callback(DictionaryIterator *iter, void *context) {
     int subtitle_key;
     Tuple *title_tuple;
     Tuple *subtitle_tuple;
-
+    Tuple *statusline_tuple;
     title_key = KEY_TITLE_0 + (i * 2);
     subtitle_key = KEY_SUBTITLE_0 + (i * 2);
-
+    
     title_tuple = dict_find(iter, title_key);
     subtitle_tuple = dict_find(iter, subtitle_key);
+    statusline_tuple = dict_find(iter, KEY_STATUSLINE_0 + i);
 
     if (title_tuple && title_tuple->value->cstring[0] != '\0') {
       snprintf(s_title_buffers[i], TITLE_LEN, "%s", title_tuple->value->cstring);
@@ -194,6 +269,11 @@ static void inbox_received_callback(DictionaryIterator *iter, void *context) {
       snprintf(s_subtitle_buffers[i], SUBTITLE_LEN, "%s", subtitle_tuple->value->cstring);
     } else {
       snprintf(s_subtitle_buffers[i], SUBTITLE_LEN, "%s", "");
+    }
+    if (statusline_tuple && statusline_tuple->value->cstring[0] != '\0') {
+      snprintf(s_statusline_buffers[i], SUBTITLE_LEN, "%s", statusline_tuple->value->cstring);
+    } else {
+      snprintf(s_statusline_buffers[i], SUBTITLE_LEN, "%s", "");
     }
   }
 
