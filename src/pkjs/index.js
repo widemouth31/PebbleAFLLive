@@ -14,8 +14,11 @@ var ROUND_CACHE_HOURS = 6;
 var CACHED_ROUND = null;
 var CACHED_ROUND_YEAR = null;
 var CACHED_ROUND_TIME = 0;
-
+var ANALYTICS_URL = "http://XXX.XXX.XXX.XXX:8787/event";
+var ANALYTICS_TOKEN = "6f9f1d8e-"
 var refreshTimer = null;
+
+
 
 var TEAM_ABBR = {
   "Adelaide": "ADEL",
@@ -37,8 +40,8 @@ var TEAM_ABBR = {
   "Greater Western Sydney": "GWS",
   "GWS": "GWS",
   "GWS Giants": "GWS",
-  "Hawthorn": "HAWKS",
-  "Hawthorn Hawks": "HAWKS",
+  "Hawthorn": "HAW",
+  "Hawthorn Hawks": "HAW",
   "Melbourne": "MELB",
   "Melbourne Demons": "MELB",
   "North Melbourne": "NM",
@@ -47,18 +50,69 @@ var TEAM_ABBR = {
   "Port Adelaide Power": "PA",
   "Richmond": "RICH",
   "Richmond Tigers": "RICH",
-  "St Kilda": "SAINTS",
-  "St Kilda Saints": "SAINTS",
+  "St Kilda": "SK",
+  "St Kilda Saints": "SK",
   "Sydney": "SYD",
   "Sydney Swans": "SYD",
-  "West Coast": "EAGLES",
-  "West Coast Eagles": "EAGLES",
+  "West Coast": "WCE",
+  "West Coast Eagles": "WCE",
   "Western Bulldogs": "WB"
 };
+
+// TEMP TEST Remove cached Settings
+// localStorage.removeItem('afl-live-settings');
+// localStorage.removeItem('afl-live-round-cache');
+// console.log('AFL Live: cleared settings');
+
 
 
 function log(message) {
   console.log("AFL Live: " + message);
+}
+
+
+function recordRemoteLaunch() {
+  var xhr;
+  var payload;
+
+  if (!ANALYTICS_URL || ANALYTICS_URL === "http://YOUR-SERVER-IP:8787/event") {
+    log("Analytics URL not configured");
+    return;
+  }
+
+  payload = {
+    app: "AFL Live",
+    event: "launch",
+    timestamp: new Date().toISOString(),
+    mode: SHOW_CURRENT_ROUND ? "round" : "live",
+    cachedRound: CACHED_ROUND
+  };
+
+  try {
+    xhr = new XMLHttpRequest();
+    xhr.open("POST", ANALYTICS_URL, true);
+    xhr.setRequestHeader("Content-Type", "application/json");
+    xhr.setRequestHeader("x-analytics-token", ANALYTICS_TOKEN);
+    xhr.timeout = 10000;
+
+    xhr.onreadystatechange = function() {
+      if (xhr.readyState === 4) {
+        log("Analytics launch ping status=" + xhr.status);
+      }
+    };
+
+    xhr.onerror = function() {
+      log("Analytics launch ping failed");
+    };
+
+    xhr.ontimeout = function() {
+      log("Analytics launch ping timed out");
+    };
+
+    xhr.send(JSON.stringify(payload));
+  } catch (e) {
+    log("Analytics launch error: " + e.message);
+  }
 }
 
 
@@ -153,6 +207,7 @@ function loadRoundCache() {
 }
 
 
+
 function saveRoundCache(round, year) {
   try {
     CACHED_ROUND = round;
@@ -181,10 +236,24 @@ function isRoundCacheValid() {
   year = getCurrentYear();
 
   if (CACHED_ROUND === null || CACHED_ROUND === undefined || CACHED_ROUND === "") {
+    log("Round cache invalid: no cached round");
     return false;
   }
 
   if (CACHED_ROUND_YEAR !== year) {
+    log("Round cache invalid: cached year " + CACHED_ROUND_YEAR + " does not match " + year);
+    return false;
+  }
+
+  if (!CACHED_ROUND_TIME) {
+    log("Round cache invalid: no cached time");
+    return false;
+  }
+
+  CACHED_ROUND_TIME = parseInt(CACHED_ROUND_TIME, 10);
+
+  if (isNaN(CACHED_ROUND_TIME)) {
+    log("Round cache invalid: cached time is not numeric");
     return false;
   }
 
@@ -192,12 +261,22 @@ function isRoundCacheValid() {
   ageMs = now - CACHED_ROUND_TIME;
   maxAgeMs = ROUND_CACHE_HOURS * 60 * 60 * 1000;
 
-  if (ageMs > maxAgeMs) {
+  if (ageMs < 0) {
+    log("Round cache invalid: cached time is in the future");
     return false;
   }
 
+  log("Round cache age minutes=" + Math.floor(ageMs / 60000) + ", max minutes=" + Math.floor(maxAgeMs / 60000));
+
+  if (ageMs > maxAgeMs) {
+    log("Round cache expired");
+    return false;
+  }
+
+  log("Round cache valid");
   return true;
 }
+
 
 
 function clearRoundCache() {
@@ -878,8 +957,8 @@ function fetchRoundGames(forceRedetectOnEmpty) {
         } else {
           sendEmptyStateToWatch(
             result.status,
-            "No live games",
-            "Currently in progress"
+            "No games Currently",
+            "in progress"
           );
         }
 
@@ -978,6 +1057,7 @@ Pebble.addEventListener("ready", function() {
 
   loadSettings();
 
+  recordRemoteLaunch();
   fetchAndSendScores();
   scheduleRefresh();
 });

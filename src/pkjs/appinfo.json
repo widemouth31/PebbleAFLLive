@@ -3,7 +3,7 @@
   "shortName": "AFL Live Scores",
   "longName": "AFL Live Scores",
   "companyName": "Chris Hardwick",
-  "versionLabel": "1.2.0",
+  "versionLabel": "1.3.0",
   "sdkVersion": "3",
   "targetPlatforms": [
     "aplite",

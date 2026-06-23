@@ -117,13 +117,114 @@ static void menu_draw_header_callback(GContext *ctx, const Layer *cell_layer, ui
   );
 }
 
+
+static bool looks_like_score_text(const char *score) {
+  int i;
+
+  if (!score || score[0] == '\0') {
+    return false;
+  }
+
+  for (i = 0; score[i] != '\0'; i++) {
+    if ((score[i] >= '0' && score[i] <= '9') || score[i] == '-') {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+static void draw_team_score_line(
+  GContext *ctx,
+  const char *text,
+  GFont font,
+  int y,
+  int height,
+  int width
+) {
+  char team[16];
+  char score[40];
+  const char *space;
+  int team_len;
+
+  memset(team, 0, sizeof(team));
+  memset(score, 0, sizeof(score));
+
+  if (!text || text[0] == '\0') {
+    return;
+  }
+
+  space = strchr(text, ' ');
+
+  /*
+    Only split/right-align when the text actually looks like:
+      TEAM SCORE
+    Examples:
+      CAR 12.9.81
+      ESS 10.10.70
+      COL -
+
+    Do not split normal message rows like:
+      No live games
+      Currently in progress
+  */
+  if (space && looks_like_score_text(space + 1)) {
+    team_len = space - text;
+
+    if (team_len > (int)sizeof(team) - 1) {
+      team_len = sizeof(team) - 1;
+    }
+
+    strncpy(team, text, team_len);
+    team[team_len] = '\0';
+
+    snprintf(score, sizeof(score), "%s", space + 1);
+
+    /*
+      Wider team column so 3-4 character abbreviations do not truncate.
+      Old width was 44, which was too small for FONT_KEY_GOTHIC_28_BOLD.
+    */
+    graphics_draw_text(
+      ctx,
+      team,
+      font,
+      GRect(6, y, 62, height),
+      GTextOverflowModeTrailingEllipsis,
+      GTextAlignmentLeft,
+      NULL
+    );
+
+    graphics_draw_text(
+      ctx,
+      score,
+      font,
+      GRect(68, y, width - 74, height),
+      GTextOverflowModeTrailingEllipsis,
+      GTextAlignmentRight,
+      NULL
+    );
+  } else {
+    graphics_draw_text(
+      ctx,
+      text,
+      font,
+      GRect(6, y, width - 12, height),
+      GTextOverflowModeTrailingEllipsis,
+      GTextAlignmentLeft,
+      NULL
+    );
+  }
+}
+
+
 static void menu_draw_row_callback(GContext *ctx, const Layer *cell_layer, MenuIndex *cell_index, void *data) {
   int row;
   GRect bounds;
-  GRect title_rect;
-  GRect subtitle_rect;
   GRect status_rect;
   bool highlighted;
+  GFont title_font;
+  GFont subtitle_font;
+  GFont status_font;
 
   row = cell_index->row;
 
@@ -141,58 +242,45 @@ static void menu_draw_row_callback(GContext *ctx, const Layer *cell_layer, MenuI
     graphics_context_set_text_color(ctx, GColorBlack);
   }
 
-  title_rect = GRect(
-    4,
+  title_font = fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD);
+  subtitle_font = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
+  status_font = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
+
+  draw_team_score_line(
+    ctx,
+    s_title_buffers[row],
+    title_font,
     0,
-    bounds.size.w - 8,
-    32
+    32,
+    bounds.size.w
   );
 
-  subtitle_rect = GRect(
-    4,
+  draw_team_score_line(
+    ctx,
+    s_subtitle_buffers[row],
+    subtitle_font,
     28,
-    bounds.size.w - 8,
-    28
+    28,
+    bounds.size.w
   );
 
   status_rect = GRect(
-    4,
+    6,
     54,
-    bounds.size.w - 8,
+    bounds.size.w - 12,
     24
   );
 
   graphics_draw_text(
     ctx,
-    s_title_buffers[row],
-    fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD),
-    title_rect,
-    GTextOverflowModeTrailingEllipsis,
-    GTextAlignmentLeft,
-    NULL
-  );
-
-  graphics_draw_text(
-    ctx,
-    s_subtitle_buffers[row],
-    fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
-    subtitle_rect,
-    GTextOverflowModeTrailingEllipsis,
-    GTextAlignmentLeft,
-    NULL
-  );
-
-  graphics_draw_text(
-    ctx,
     s_statusline_buffers[row],
-    fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
+    status_font,
     status_rect,
     GTextOverflowModeTrailingEllipsis,
-    GTextAlignmentLeft,
+    GTextAlignmentCenter,
     NULL
   );
 }
-
 
 
 static void menu_select_click_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *data) {
